@@ -1,0 +1,84 @@
+import os
+import hashlib
+import json
+import argparse
+
+def calculate_hash(filepath):
+    """Calculate SHA-256 hash of a file."""
+    sha256 = hashlib.sha256()
+    try:
+        with open(filepath, 'rb') as f:
+            while chunk := f.read(8192):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+    except FileNotFoundError:
+        return None
+
+def create_hash_database(directory, output_file='hashes.json'):
+    """Scan directory and save hashes to a file."""
+    hash_data = {}
+    for root, _, files in os.walk(directory):
+        for file in files:
+            filepath = os.path.join(root, file)
+            hash_value = calculate_hash(filepath)
+            if hash_value:
+                hash_data[filepath] = hash_value
+    with open(output_file, 'w') as f:
+        json.dump(hash_data, f, indent=4)
+    print(f"[+] Hash database created at '{output_file}'.")
+
+def check_integrity(directory, hash_file='hashes.json'):
+    """Compare current file hashes with stored hashes."""
+    if not os.path.exists(hash_file):
+        print("[-] Hash database not found. Run with --init first.")
+        return
+    
+    with open(hash_file, 'r') as f:
+        old_hashes = json.load(f)
+    
+    current_hashes = {}
+    for root, _, files in os.walk(directory):
+        for file in files:
+            filepath = os.path.join(root, file)
+            hash_value = calculate_hash(filepath)
+            if hash_value:
+                current_hashes[filepath] = hash_value
+
+    added = set(current_hashes) - set(old_hashes)
+    deleted = set(old_hashes) - set(current_hashes)
+    modified = {file for file in current_hashes if file in old_hashes and current_hashes[file] != old_hashes[file]}
+
+    print("\n[+] Integrity Check Result:")
+    print(f"  Added Files   : {len(added)}")
+    print(f"  Deleted Files : {len(deleted)}")
+    print(f"  Modified Files: {len(modified)}")
+
+    if added or deleted or modified:
+        print("\n[!] Details:")
+        if added:
+            print("  - Added:", *added, sep="\n    ")
+        if deleted:
+            print("  - Deleted:", *deleted, sep="\n    ")
+        if modified:
+            print("  - Modified:", *modified, sep="\n    ")
+    else:
+        print("  No changes detected. All files are intact.")
+
+def main():
+    parser = argparse.ArgumentParser(description="File Integrity Checker using SHA-256")
+    parser.add_argument("directory", help="Directory to scan")
+    parser.add_argument("--init", action="store_true", help="Initialize hash database")
+    parser.add_argument("--check", action="store_true", help="Check file integrity")
+    parser.add_argument("--hashfile", default="hashes.json", help="Path to hash database file")
+
+    args = parser.parse_args()
+
+    if args.init:
+        create_hash_database(args.directory, args.hashfile)
+    elif args.check:
+        check_integrity(args.directory, args.hashfile)
+    else:
+        parser.print_help()
+
+if _name_ == "_main_":
+    main()
